@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm-to-Fork | Autonomous Hydroponics IoE Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for Real-Time Telemetry Plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        emerald: {
+                            950: '#041f18',
+                            900: '#06372b',
+                            850: '#094435',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #031510;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.12) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 78, 59, 0.18) 0px, transparent 50%);
+            color: #ecfdf5;
+        }
+        .glass-card {
+            background: rgba(6, 40, 31, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(52, 211, 153, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        }
+        .glass-card-danger {
+            background: rgba(69, 10, 10, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            box-shadow: 0 8px 32px rgba(220, 38, 38, 0.25);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.85); opacity: 0.9; }
+            70% { transform: scale(1.6); opacity: 0; }
+            100% { transform: scale(1.6); opacity: 0; }
+        }
+        .animate-pulse-ring::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background-color: currentColor;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        /* Custom Scrollbar for JSON inspector */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(4, 31, 24, 0.6);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(16, 185, 129, 0.3);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(16, 185, 129, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-emerald-500 selection:text-white pb-12">
+
+    <!-- Top Notification Toast Banner (Replaces alert) -->
+    <div id="toastBanner" class="fixed bottom-5 right-5 z-50 transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="glass-card border-emerald-400/40 px-4 py-3 rounded-xl flex items-center gap-3 shadow-2xl">
+            <div id="toastIcon" class="text-emerald-400">
+                <i data-lucide="info" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <p id="toastTitle" class="text-sm font-semibold text-white">System Event</p>
+                <p id="toastMsg" class="text-xs text-emerald-200/80">Action completed.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+
+        <!-- 1) TOP HEADER -->
+        <header class="glass-card rounded-2xl p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <!-- Branding -->
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
+                    <i data-lucide="sprout" class="w-7 h-7 text-emerald-950 stroke-[2.2]"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2.5 flex-wrap">
+                        <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-white">Farm-to-Fork</h1>
+                        <span class="text-[11px] font-mono uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            ESP32-WROOM-32 Edge
+                        </span>
+                    </div>
+                    <p class="text-xs sm:text-sm text-emerald-200/70 mt-0.5">
+                        Autonomous Urban Hydroponics Rack • Closed-Loop Nutrient & Failsafe IoE
+                    </p>
+                </div>
+            </div>
+
+            <!-- Controls & MQTT Status -->
+            <div class="flex flex-wrap items-center gap-3">
+                <!-- MQTT Connection Status Badge -->
+                <div id="mqttBadge" class="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-emerald-950/90 border border-emerald-500/30">
+                    <span class="relative flex h-2.5 w-2.5 text-emerald-400 animate-pulse-ring">
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                    </span>
+                    <div class="text-left">
+                        <div class="text-xs font-semibold text-emerald-300 leading-none">MQTT Connected</div>
+                        <div class="text-[10px] font-mono text-emerald-400/70 mt-0.5">ws://broker.local:9001 • 5s</div>
+                    </div>
+                </div>
+
+                <!-- Simulate Live Telemetry Toggle -->
+                <button id="simToggleBtn" onclick="toggleSimulation()" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer">
+                    <i id="simIcon" data-lucide="pause" class="w-4 h-4"></i>
+                    <span id="simText">Live Telemetry: ON</span>
+                </button>
+
+                <!-- Trigger Low Water Failsafe Test Button -->
+                <button id="failsafeBtn" onclick="toggleFailsafeTest()" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/40 font-semibold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer">
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-red-400"></i>
+                    <span id="failsafeBtnText">Trigger Low-Water Failsafe</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Critical Emergency Alert Banner (Hidden unless Low-Water Failsafe active) -->
+        <div id="failsafeBanner" class="hidden glass-card-danger rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-fade-in">
+            <div class="flex items-center gap-3.5">
+                <div class="p-2.5 rounded-xl bg-red-500/20 text-red-400 shrink-0">
+                    <i data-lucide="alert-octagon" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h2 class="text-sm sm:text-base font-bold text-red-200 flex items-center gap-2">
+                        HARDWARE INTERRUPT TRIGGERED (GPIO 18)
+                        <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-500/30 text-red-100">Latency: 42 ms (&lt;80ms)</span>
+                    </h2>
+                    <p class="text-xs text-red-200/80 mt-0.5">
+                        Magnetic reed float switch detected critically low reservoir level (&lt;5L safe threshold). Optocoupled relays immediately disconnected 12V Circulation & Dosing pumps to prevent dry-run burnout.
+                    </p>
+                </div>
+            </div>
+            <button onclick="toggleFailsafeTest()" class="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white text-xs font-semibold shrink-0 transition cursor-pointer">
+                Restore Water & Reset
+            </button>
+        </div>
+
+        <!-- 2) FOUR REAL-TIME KPI TELEMETRY CARDS -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
+            
+            <!-- KPI 1: Compensated TDS -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-emerald-400/80">GPIO 34 • TDS Sensor</span>
+                        <h3 class="text-sm font-medium text-emerald-100/90 mt-0.5">Compensated TDS</h3>
+                    </div>
+                    <div class="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
+                        <i data-lucide="flask-conical" class="w-5 h-5"></i>
+                    </div>
+                </div>
+
+                <div class="my-4">
+                    <div class="flex items-baseline gap-2">
+                        <span id="tdsValue" class="text-3xl sm:text-4xl font-bold font-mono text-white tracking-tight">642</span>
+                        <span class="text-sm font-mono text-emerald-300/70">ppm</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span id="tdsBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            Optimal (Target 650)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-emerald-500/15 flex items-center justify-between text-xs text-emerald-200/70 font-mono">
+                    <span>Dosing Trigger: &lt;600 ppm</span>
+                    <span>Band: ±45 ppm</span>
+                </div>
+            </div>
+
+            <!-- KPI 2: pH Level -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-teal-400/80">GPIO 35 • pH-4502C</span>
+                        <h3 class="text-sm font-medium text-emerald-100/90 mt-0.5">Solution pH Level</h3>
+                    </div>
+                    <div class="p-2 rounded-xl bg-teal-500/15 text-teal-400">
+                        <i data-lucide="droplets" class="w-5 h-5"></i>
+                    </div>
+                </div>
+
+                <div class="my-4">
+                    <div class="flex items-baseline gap-2">
+                        <span id="phValue" class="text-3xl sm:text-4xl font-bold font-mono text-white tracking-tight">6.10</span>
+                        <span class="text-sm font-mono text-emerald-300/70">pH</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span id="phBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                            <span class="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                            Ideal Range (5.5–6.5)
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Visual pH Scale Bar -->
+                <div class="pt-3 border-t border-emerald-500/15">
+                    <div class="flex justify-between text-[10px] font-mono text-emerald-300/60 mb-1">
+                        <span>4.0 Acid</span>
+                        <span class="text-emerald-300 font-semibold">5.5 - 6.5 Ideal</span>
+                        <span>8.0 Alk</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-emerald-950 rounded-full overflow-hidden relative">
+                        <!-- Ideal zone highlight -->
+                        <div class="absolute left-[37.5%] w-[25%] h-full bg-emerald-500/40"></div>
+                        <!-- Live Indicator Dot -->
+                        <div id="phMarker" class="absolute top-0 bottom-0 w-2 bg-white rounded-full shadow transition-all duration-500" style="left: 52.5%;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPI 3: Water Temperature & Compensation -->
+            <div class="glass-card rounded-2xl p-5 flex flex-col justify-between">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-cyan-400/80">GPIO 4 • DS18B20</span>
+                        <h3 class="text-sm font-medium text-emerald-100/90 mt-0.5">Water Temperature</h3>
+                    </div>
+                    <div class="p-2 rounded-xl bg-cyan-500/15 text-cyan-400">
+                        <i data-lucide="thermometer" class="w-5 h-5"></i>
+                    </div>
+                </div>
+
+                <div class="my-4">
+                    <div class="flex items-baseline gap-2">
+                        <span id="tempValue" class="text-3xl sm:text-4xl font-bold font-mono text-white tracking-tight">24.8</span>
+                        <span class="text-sm font-mono text-emerald-300/70">°C</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                            T<sub>comp</sub> = <span id="tCompValue" class="font-semibold">0.9960</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-emerald-500/15 flex items-center justify-between text-[11px] text-emerald-200/70 font-mono">
+                    <span>1 + 0.02×(T - 25°C)</span>
+                    <span class="text-cyan-300">Active</span>
+                </div>
+            </div>
+
+            <!-- KPI 4: Reservoir Water Level (Float Switch) -->
+            <div id="waterCard" class="glass-card rounded-2xl p-5 flex flex-col justify-between transition-colors duration-300">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-emerald-400/80">GPIO 18 • Reed Float</span>
+                        <h3 class="text-sm font-medium text-emerald-100/90 mt-0.5">Reservoir Level (5L)</h3>
+                    </div>
+                    <div id="waterIconBox" class="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
+                        <i data-lucide="waves" class="w-5 h-5"></i>
+                    </div>
+                </div>
+
+                <div class="my-4">
+                    <div class="flex items-baseline gap-2">
+                        <span id="waterStatusText" class="text-2xl sm:text-3xl font-bold font-mono text-emerald-300 tracking-tight">NORMAL</span>
+                    </div>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span id="waterSubBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            Float Switch Closed (HIGH)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-emerald-500/15 flex items-center justify-between text-xs text-emerald-200/70 font-mono">
+                    <span>Interrupt Cutoff: &lt;80ms</span>
+                    <span id="waterLatency" class="text-emerald-400">Armed</span>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- 3 & 4) MIDDLE ROW: REAL-TIME CHARTS + ACTUATOR & CONTROL LOGIC PANEL -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            
+            <!-- 4) Real-Time Interactive Line Charts (7 Columns on LG) -->
+            <div class="lg:col-span-7 glass-card rounded-2xl p-5 flex flex-col justify-between">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                    <div>
+                        <h2 class="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                            <i data-lucide="activity" class="w-5 h-5 text-emerald-400"></i>
+                            Closed-Loop Telemetry Trends
+                        </h2>
+                        <p class="text-xs text-emerald-200/60">Live 5-second MQTT stream • Target 650 ppm (600 ppm dosing floor)</p>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs font-mono">
+                        <span class="flex items-center gap-1.5 text-emerald-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span> TDS (ppm)
+                        </span>
+                        <span class="flex items-center gap-1.5 text-cyan-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-cyan-400"></span> Temp (°C)
+                        </span>
+                        <span class="flex items-center gap-1.5 text-amber-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-amber-400"></span> pH
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Chart Canvas Wrapper -->
+                <div class="relative w-full h-64 sm:h-72">
+                    <canvas id="telemetryChart"></canvas>
+                </div>
+
+                <div class="mt-3 pt-3 border-t border-emerald-500/15 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200/60 font-mono">
+                    <span>NFT Channel Circulation: Continuous</span>
+                    <span>Last Packet: <span id="lastPacketTime" class="text-emerald-300">Just now</span></span>
+                </div>
+            </div>
+
+            <!-- 3) Actuator & Control Logic Status Panel (5 Columns on LG) -->
+            <div class="lg:col-span-5 glass-card rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                            <i data-lucide="cpu" class="w-5 h-5 text-emerald-400"></i>
+                            Actuator & Edge Control Logic
+                        </h2>
+                        <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                            Optocoupled Relay
+                        </span>
+                    </div>
+                    <p class="text-xs text-emerald-200/60 mt-0.5">Local ESP32 autonomous state machine & hysteresis protection</p>
+                </div>
+
+                <!-- Actuator Status Grid -->
+                <div class="space-y-3">
+                    <!-- 12V Circulation Pump -->
+                    <div class="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/20 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div id="circIconBg" class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+                                <i data-lucide="refresh-cw" id="circSpinIcon" class="w-5 h-5 animate-spin" style="animation-duration: 4s;"></i>
+                            </div>
+                            <div>
+                                <div class="text-sm font-semibold text-white">12V NFT Circulation Pump</div>
+                                <div class="text-xs text-emerald-200/60 font-mono">Relay CH1 • Thin film flow</div>
+                            </div>
+                        </div>
+                        <span id="circStateBadge" class="px-3 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            ON
+                        </span>
+                    </div>
+
+                    <!-- 12V Peristaltic Dosing Pump -->
+                    <div class="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/20 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div id="doseIconBg" class="p-2 rounded-lg bg-teal-500/15 text-teal-400">
+                                <i data-lucide="pipette" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <div class="text-sm font-semibold text-white">12V Nutrient Dosing Pump</div>
+                                <div class="text-xs text-emerald-200/60 font-mono">Relay CH2 • 2s pulse (~4 mL)</div>
+                            </div>
+                        </div>
+                        <span id="doseStateBadge" class="px-3 py-1 rounded-lg text-xs font-mono font-bold bg-slate-800 text-emerald-200/80 border border-emerald-500/20">
+                            IDLE
+                        </span>
+                    </div>
+
+                    <!-- Hysteresis Lockout Timer (300s countdown progress bar) -->
+                    <div class="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/20 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="timer" class="w-4 h-4 text-amber-400"></i>
+                                <span class="text-sm font-semibold text-white">Hysteresis Mixing Lockout</span>
+                            </div>
+                            <span id="lockoutTimerText" class="text-xs font-mono font-bold text-emerald-300">
+                                READY (0s / 300s)
+                            </span>
+                        </div>
+                        <p class="text-[11px] text-emerald-200/65">
+                            Prevents nutrient overshoot by locking dosing for 300s after each 4 mL injection while solution mixes.
+                        </p>
+                        <!-- Progress Bar -->
+                        <div class="w-full h-2.5 bg-emerald-950 rounded-full overflow-hidden border border-emerald-500/20">
+                            <div id="lockoutProgressBar" class="h-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500 rounded-full" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Dry-Run Failsafe Status -->
+                    <div class="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-500/20 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div id="failsafeIconBg" class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+                                <i data-lucide="shield-check" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <div class="text-sm font-semibold text-white">Edge Dry-Run Failsafe</div>
+                                <div class="text-xs text-emerald-200/60 font-mono">Local ISR • Cloud-independent</div>
+                            </div>
+                        </div>
+                        <span id="failsafeStatusBadge" class="px-3 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                            PROTECTED
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- 5) BOTTOM ROW: LIVE JSON MQTT PAYLOAD INSPECTOR + MANUAL DEMO CONTROLS -->
+        <section class="glass-card rounded-2xl p-5">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-emerald-500/15">
+                <div>
+                    <h2 class="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
+                        <i data-lucide="terminal" class="w-5 h-5 text-emerald-400"></i>
+                        Live JSON MQTT Telemetry Inspector
+                    </h2>
+                    <p class="text-xs text-emerald-200/65 mt-0.5">
+                        Topic: <code class="text-emerald-300 font-mono bg-emerald-950 px-1.5 py-0.5 rounded">farm2fork/rack01/telemetry</code> • Published every 5 seconds by ESP32
+                    </p>
+                </div>
+
+                <!-- Demo Action Buttons -->
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <button onclick="simulateNutrientDepletion()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-900/80 hover:bg-emerald-800 text-emerald-200 border border-emerald-500/30 text-xs font-medium transition cursor-pointer" title="Drops TDS below 600 ppm to trigger automatic closed-loop dosing">
+                        <i data-lucide="trending-down" class="w-4 h-4 text-amber-400"></i>
+                        Drop TDS &lt;600 ppm
+                    </button>
+
+                    <button id="forceDoseBtn" onclick="triggerDosingPulse(true)" class="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-emerald-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95 cursor-pointer">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                        Force 2s Dosing Pulse
+                    </button>
+
+                    <button onclick="copyJsonPayload()" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/25 text-xs font-mono transition cursor-pointer">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        Copy JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- JSON Code View & Event Log Split -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mt-4">
+                <!-- Live JSON Payload Box -->
+                <div class="lg:col-span-6 bg-[#020d0a] rounded-xl p-4 border border-emerald-500/20 font-mono text-xs sm:text-sm overflow-x-auto relative">
+                    <div class="flex items-center justify-between text-[11px] text-emerald-400/60 mb-2 pb-1.5 border-b border-emerald-500/10">
+                        <span>PAYLOAD (UTF-8 JSON)</span>
+                        <span id="jsonByteSize">118 bytes</span>
+                    </div>
+                    <pre id="jsonPayloadOutput" class="text-emerald-300 leading-relaxed"></pre>
+                </div>
+
+                <!-- Edge Controller Event Log -->
+                <div class="lg:col-span-6 bg-[#020d0a] rounded-xl p-4 border border-emerald-500/20 font-mono text-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-[11px] text-emerald-400/60 mb-2 pb-1.5 border-b border-emerald-500/10">
+                        <span>ESP32 EDGE SERIAL / MQTT EVENT LOG</span>
+                        <button onclick="clearLogs()" class="hover:text-emerald-300 underline cursor-pointer">Clear</button>
+                    </div>
+                    <div id="eventLogList" class="space-y-1.5 max-h-40 overflow-y-auto pr-1 text-[11px] sm:text-xs">
+                        <!-- Logs injected dynamically -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // ==========================================
+        // 1. SYSTEM STATE (Matches Hardware Specs)
+        // ==========================================
+        const state = {
+            tds: 642,               // Target: 650 ppm, Dosing Trigger: < 600 ppm
+            ph: 6.10,               // Ideal range: 5.5 - 6.5
+            temp: 24.8,             // DS18B20 Water Temperature (°C)
+            pump_circ: 1,           // 12V Circulation Pump (1 = ON, 0 = OFF)
+            pump_dose: 0,           // 12V Dosing Pump (1 = DOSING 2s, 0 = IDLE)
+            float_ok: 1,            // Magnetic Reed Float Switch (1 = NORMAL, 0 = LOW WATER)
+            lockout_sec: 0,         // Hysteresis Lockout remaining seconds (0 to 300)
+            isSimulating: true,     // 5-second telemetry loop active
+            pendingNutrientBoost: 0 // Simulates gradual mixing of injected 4mL nutrient
+        };
+
+        const MAX_LOCKOUT_SEC = 300;
+        const TDS_TARGET = 650;
+        const TDS_THRESHOLD = 600;
+
+        // ==========================================
+        // 2. CHART.JS REAL-TIME TELEMETRY SETUP
+        // ==========================================
+        const ctx = document.getElementById('telemetryChart').getContext('2d');
+        
+        // Seed initial 10 historical timestamps (5s intervals)
+        const initialLabels = [];
+        const initialTds = [635, 638, 636, 640, 639, 641, 643, 641, 643, 642];
+        const initialTemp = [24.6, 24.6, 24.7, 24.7, 24.8, 24.8, 24.7, 24.8, 24.8, 24.8];
+        const initialPh = [6.08, 6.09, 6.09, 6.10, 6.11, 6.10, 6.10, 6.11, 6.10, 6.10];
+
+        const now = Date.now();
+        for (let i = 9; i >= 0; i--) {
+            const t = new Date(now - i * 5000);
+            initialLabels.push(t.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        }
+
+        const telemetryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: initialLabels,
+                datasets: [
+                    {
+                        label: 'Compensated TDS (ppm)',
+                        data: initialTds,
+                        borderColor: '#34d399',
+                        backgroundColor: 'rgba(52, 211, 153, 0.12)',
+                        borderWidth: 2.5,
+                        pointRadius: 3,
+                        pointBackgroundColor: '#34d399',
+                        tension: 0.35,
+                        fill: true,
+                        yAxisID: 'yTds'
+                    },
+                    {
+                        label: 'Water Temp (°C)',
+                        data: initialTemp,
+                        borderColor: '#22d3ee',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 2.5,
+                        tension: 0.35,
+                        yAxisID: 'yEnv'
+                    },
+                    {
+                        label: 'pH Level',
+                        data: initialPh,
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [4, 4],
+                        pointRadius: 2.5,
+                        tension: 0.35,
+                        yAxisID: 'yEnv'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(4, 31, 24, 0.95)',
+                        titleColor: '#ecfdf5',
+                        bodyColor: '#a7f3d0',
+                        borderColor: 'rgba(52, 211, 153, 0.3)',
+                        borderWidth: 1,
+                        padding: 10,
+                        titleFont: { family: 'JetBrains Mono' },
+                        bodyFont: { family: 'JetBrains Mono' }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(52, 211, 153, 0.08)' },
+                        ticks: { color: 'rgba(167, 243, 208, 0.6)', font: { family: 'JetBrains Mono', size: 10 } }
+                    },
+                    yTds: {
+                        type: 'linear',
+                        position: 'left',
+                        min: 540,
+                        max: 720,
+                        grid: { color: 'rgba(52, 211, 153, 0.08)' },
+                        ticks: { color: '#34d399', font: { family: 'JetBrains Mono', size: 11 } },
+                        title: { display: true, text: 'TDS (ppm)', color: '#34d399', font: { size: 10, family: 'JetBrains Mono' } }
+                    },
+                    yEnv: {
+                        type: 'linear',
+                        position: 'right',
+                        min: 4,
+                        max: 32,
+                        grid: { drawOnChartArea: false },
+                        ticks: { color: '#22d3ee', font: { family: 'JetBrains Mono', size: 11 } },
+                        title: { display: true, text: 'Temp (°C) / pH', color: '#22d3ee', font: { size: 10, family: 'JetBrains Mono' } }
+                    }
+                }
+            }
+        });
+
+        // ==========================================
+        // 3. UI RENDERING & PAYLOAD FORMATTING
+        // ==========================================
+        function updateUI() {
+            // 1. TDS Card
+            const tdsEl = document.getElementById('tdsValue');
+            const tdsBadge = document.getElementById('tdsBadge');
+            tdsEl.textContent = Math.round(state.tds);
+
+            if (state.tds < TDS_THRESHOLD) {
+                tdsBadge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                tdsBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> Below 600 ppm Threshold`;
+            } else if (state.tds >= 605 && state.tds <= 695) {
+                tdsBadge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                tdsBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Optimal (Target 650)`;
+            } else {
+                tdsBadge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-500/30";
+                tdsBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> Stabilizing`;
+            }
+
+            // 2. pH Card
+            document.getElementById('phValue').textContent = state.ph.toFixed(2);
+            const phPercent = Math.min(100, Math.max(0, ((state.ph - 4.0) / 4.0) * 100));
+            document.getElementById('phMarker').style.left = `${phPercent}%`;
+
+            // 3. Temperature & Compensation Factor: T_comp = 1 + 0.02 * (T - 25)
+            document.getElementById('tempValue').textContent = state.temp.toFixed(1);
+            const tComp = 1 + 0.02 * (state.temp - 25.0);
+            document.getElementById('tCompValue').textContent = tComp.toFixed(4);
+
+            // 4. Reservoir Water Level Card & Banner
+            const waterCard = document.getElementById('waterCard');
+            const waterStatusText = document.getElementById('waterStatusText');
+            const waterSubBadge = document.getElementById('waterSubBadge');
+            const waterIconBox = document.getElementById('waterIconBox');
+            const waterLatency = document.getElementById('waterLatency');
+            const failsafeBanner = document.getElementById('failsafeBanner');
+            const failsafeBtn = document.getElementById('failsafeBtn');
+            const failsafeBtnText = document.getElementById('failsafeBtnText');
+
+            if (state.float_ok === 1) {
+                waterCard.className = "glass-card rounded-2xl p-5 flex flex-col justify-between transition-colors duration-300";
+                waterStatusText.textContent = "NORMAL";
+                waterStatusText.className = "text-2xl sm:text-3xl font-bold font-mono text-emerald-300 tracking-tight";
+                waterSubBadge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                waterSubBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Float Switch Closed (HIGH)`;
+                waterIconBox.className = "p-2 rounded-xl bg-emerald-500/15 text-emerald-400";
+                waterLatency.textContent = "Armed";
+                waterLatency.className = "text-emerald-400";
+                failsafeBanner.classList.add('hidden');
+                failsafeBtn.className = "flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/40 font-semibold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer";
+                failsafeBtnText.textContent = "Trigger Low-Water Failsafe";
+            } else {
+                waterCard.className = "glass-card-danger rounded-2xl p-5 flex flex-col justify-between transition-colors duration-300";
+                waterStatusText.textContent = "LOW-WATER ISR";
+                waterStatusText.className = "text-2xl sm:text-3xl font-bold font-mono text-red-400 tracking-tight";
+                waterSubBadge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/25 text-red-200 border border-red-500/50";
+                waterSubBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping"></span> Interrupt Cut (<80ms)`;
+                waterIconBox.className = "p-2 rounded-xl bg-red-500/25 text-red-400";
+                waterLatency.textContent = "TRIPPED (42ms)";
+                waterLatency.className = "text-red-400 font-bold";
+                failsafeBanner.classList.remove('hidden');
+                failsafeBtn.className = "flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer";
+                failsafeBtnText.textContent = "Reset Low-Water Failsafe";
+            }
+
+            // 5. Actuators Panel
+            const circBadge = document.getElementById('circStateBadge');
+            const circSpin = document.getElementById('circSpinIcon');
+            const circIconBg = document.getElementById('circIconBg');
+
+            if (state.pump_circ === 1) {
+                circBadge.textContent = "ON";
+                circBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                circSpin.classList.add('animate-spin');
+                circIconBg.className = "p-2 rounded-lg bg-emerald-500/20 text-emerald-400";
+            } else {
+                circBadge.textContent = "OFF (CUT)";
+                circBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/40";
+                circSpin.classList.remove('animate-spin');
+                circIconBg.className = "p-2 rounded-lg bg-red-500/20 text-red-400";
+            }
+
+            const doseBadge = document.getElementById('doseStateBadge');
+            const doseIconBg = document.getElementById('doseIconBg');
+            if (state.pump_dose === 1) {
+                doseBadge.textContent = "DOSING (2s ~4mL)";
+                doseBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-amber-500/25 text-amber-300 border border-amber-500/50 animate-pulse";
+                doseIconBg.className = "p-2 rounded-lg bg-amber-500/25 text-amber-300";
+            } else {
+                doseBadge.textContent = "IDLE";
+                doseBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-slate-800/90 text-emerald-200/75 border border-emerald-500/20";
+                doseIconBg.className = "p-2 rounded-lg bg-teal-500/15 text-teal-400";
+            }
+
+            // 6. Hysteresis Lockout Bar
+            const lockoutText = document.getElementById('lockoutTimerText');
+            const lockoutBar = document.getElementById('lockoutProgressBar');
+            if (state.lockout_sec > 0) {
+                lockoutText.textContent = `LOCKED (${state.lockout_sec}s / 300s)`;
+                lockoutText.className = "text-xs font-mono font-bold text-amber-300";
+                const pct = (state.lockout_sec / MAX_LOCKOUT_SEC) * 100;
+                lockoutBar.style.width = `${pct}%`;
+            } else {
+                lockoutText.textContent = `READY (0s / 300s)`;
+                lockoutText.className = "text-xs font-mono font-bold text-emerald-300";
+                lockoutBar.style.width = `0%`;
+            }
+
+            // 7. Failsafe Status Badge in Actuator Panel
+            const fsStatusBadge = document.getElementById('failsafeStatusBadge');
+            const fsIconBg = document.getElementById('failsafeIconBg');
+            if (state.float_ok === 1) {
+                fsStatusBadge.textContent = "PROTECTED";
+                fsStatusBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                fsIconBg.className = "p-2 rounded-lg bg-emerald-500/20 text-emerald-400";
+            } else {
+                fsStatusBadge.textContent = "TRIPPED (OFFLINE)";
+                fsStatusBadge.className = "px-3 py-1 rounded-lg text-xs font-mono font-bold bg-red-500/25 text-red-300 border border-red-500/50";
+                fsIconBg.className = "p-2 rounded-lg bg-red-500/25 text-red-400";
+            }
+
+            // 8. Update JSON MQTT Inspector
+            renderJsonPayload();
+        }
+
+        function renderJsonPayload() {
+            const payload = {
+                tds: Math.round(state.tds),
+                ph: Number(state.ph.toFixed(2)),
+                temp: Number(state.temp.toFixed(1)),
+                pump_circ: state.pump_circ,
+                pump_dose: state.pump_dose,
+                float_ok: state.float_ok,
+                lockout_sec: state.lockout_sec
+            };
+            const jsonStr = JSON.stringify(payload, null, 2);
+            document.getElementById('jsonPayloadOutput').textContent = jsonStr;
+            document.getElementById('jsonByteSize').textContent = `${new Blob([JSON.stringify(payload)]).size} bytes`;
+        }
+
+        // ==========================================
+        // 4. CONTROL LOGIC & INTERACTIVE ACTIONS
+        // ==========================================
+        function addLog(message, type = 'info') {
+            const logList = document.getElementById('eventLogList');
+            const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const colors = {
+                info: 'text-emerald-300',
+                warn: 'text-amber-300',
+                danger: 'text-red-400 font-semibold',
+                mqtt: 'text-cyan-300/80'
+            };
+            const entry = document.createElement('div');
+            entry.className = `${colors[type] || colors.info} leading-snug`;
+            entry.textContent = `[${time}] ${message}`;
+            logList.prepend(entry);
+
+            // Keep max 25 log lines
+            while (logList.children.length > 25) {
+                logList.removeChild(logList.lastChild);
+            }
+        }
+
+        function showToast(title, msg, isDanger = false) {
+            const banner = document.getElementById('toastBanner');
+            const iconBox = document.getElementById('toastIcon');
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastMsg').textContent = msg;
+
+            iconBox.className = isDanger ? 'text-red-400' : 'text-emerald-400';
+            banner.classList.remove('translate-y-24', 'opacity-0');
+            
+            clearTimeout(window.toastTimeout);
+            window.toastTimeout = setTimeout(() => {
+                banner.classList.add('translate-y-24', 'opacity-0');
+            }, 3500);
+        }
+
+        // Dosing Pulse & 300s Hysteresis Lockout
+        function triggerDosingPulse(isManual = false) {
+            if (state.float_ok === 0) {
+                showToast('Safety Interlock Active', 'Cannot dose while Low-Water Failsafe is active!', true);
+                addLog('BLOCKED: Dosing inhibited due to low reservoir level.', 'danger');
+                return;
+            }
+            if (state.pump_dose === 1) return;
+
+            if (state.lockout_sec > 0 && !isManual) {
+                return; // Respect hysteresis lockout during automated cycles
+            }
+
+            // Activate 2s Dosing Pulse (~4 mL nutrient)
+            state.pump_dose = 1;
+            state.lockout_sec = MAX_LOCKOUT_SEC; // Start 300s hysteresis lockout
+            state.pendingNutrientBoost += 58;    // ~4mL in 5L reservoir raises TDS by ~55-60 ppm
+            
+            const triggerSource = isManual ? 'MANUAL OVERRIDE' : 'AUTO CLOSED-LOOP (<600 ppm)';
+            addLog(`${triggerSource}: Dosing pump ON for 2.0s (~4 mL). Lockout set to 300s.`, 'warn');
+            showToast('2s Dosing Pulse Active', 'Injecting ~4 mL nutrient. 300s hysteresis lockout started.');
+            updateUI();
+
+            // Turn off dosing pump after exactly 2 seconds
+            setTimeout(() => {
+                state.pump_dose = 0;
+                addLog('Dosing pump OFF (2.0s pulse complete). Mixing in NFT channel...', 'info');
+                updateUI();
+            }, 2000);
+        }
+
+        // Simulate Nutrient Depletion (Drop TDS < 600 ppm for live demo)
+        function simulateNutrientDepletion() {
+            state.tds = 582;
+            state.pendingNutrientBoost = 0;
+            addLog('DEMO: Simulated plant nutrient uptake -> TDS dropped to 582 ppm.', 'warn');
+            updateUI();
+
+            if (state.lockout_sec === 0 && state.float_ok === 1) {
+                setTimeout(() => triggerDosingPulse(false), 800);
+            } else if (state.lockout_sec > 0) {
+                showToast('TDS Below 600 ppm', `Auto-dosing held by hysteresis lockout (${state.lockout_sec}s remaining).`);
+            }
+        }
+
+        // Toggle Low-Water Dry-Run Failsafe Test
+        function toggleFailsafeTest() {
+            if (state.float_ok === 1) {
+                // Trigger Interrupt
+                state.float_ok = 0;
+                state.pump_circ = 0;
+                state.pump_dose = 0;
+                addLog('CRITICAL ISR (GPIO 18): Float switch LOW! Relays cut in 42ms (<80ms).', 'danger');
+                showToast('Dry-Run Failsafe Triggered', 'All 12V pumps disconnected locally in 42ms.', true);
+            } else {
+                // Restore Normal Level
+                state.float_ok = 1;
+                state.pump_circ = 1;
+                addLog('RECOVERY: Reservoir water restored. Circulation pump resumed.', 'info');
+                showToast('Reservoir Restored', 'Float switch closed. Normal NFT circulation resumed.');
+            }
+            updateUI();
+        }
+
+        // Toggle 5-Second Live Telemetry Simulation
+        function toggleSimulation() {
+            state.isSimulating = !state.isSimulating;
+            const btn = document.getElementById('simToggleBtn');
+            const icon = document.getElementById('simIcon');
+            const text = document.getElementById('simText');
+
+            if (state.isSimulating) {
+                btn.className = "flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold text-xs sm:text-sm transition-all shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer";
+                icon.setAttribute('data-lucide', 'pause');
+                text.textContent = "Live Telemetry: ON";
+                addLog('MQTT Telemetry stream resumed (5s interval).', 'mqtt');
+            } else {
+                btn.className = "flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/30 font-semibold text-xs sm:text-sm transition-all active:scale-95 cursor-pointer";
+                icon.setAttribute('data-lucide', 'play');
+                text.textContent = "Live Telemetry: PAUSED";
+                addLog('MQTT Telemetry stream paused.', 'warn');
+            }
+            lucide.createIcons();
+        }
+
+        // Copy JSON Payload using execCommand fallback
+        function copyJsonPayload() {
+            const text = document.getElementById('jsonPayloadOutput').textContent;
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast('Copied to Clipboard', 'Live MQTT JSON payload copied.');
+            } catch (err) {
+                showToast('Copy Failed', 'Unable to copy JSON payload.', true);
+            }
+            document.body.removeChild(textarea);
+        }
+
+        function clearLogs() {
+            document.getElementById('eventLogList').innerHTML = '';
+            addLog('Log buffer cleared.', 'info');
+        }
+
+        // ==========================================
+        // 5. TIMERS: 1-SECOND LOCKOUT TICK & 5-SECOND MQTT PUBLISH
+        // ==========================================
+        
+        // 1-second local ESP32 edge clock for hysteresis countdown & smooth mixing
+        setInterval(() => {
+            if (state.lockout_sec > 0) {
+                state.lockout_sec -= 1;
+                if (state.lockout_sec === 0) {
+                    addLog('Hysteresis lockout complete (300s). TDS re-evaluation enabled.', 'info');
+                }
+                updateUI();
+            }
+
+            // Gradually mix injected nutrient into reservoir over ~15 seconds
+            if (state.pendingNutrientBoost > 0 && state.pump_circ === 1) {
+                const step = Math.min(state.pendingNutrientBoost, 4.2);
+                state.tds += step;
+                state.pendingNutrientBoost -= step;
+                updateUI();
+            }
+        }, 1000);
+
+        // 5-second MQTT Telemetry Publish & Chart Update Loop
+        setInterval(() => {
+            if (!state.isSimulating) return;
+
+            // Gentle realistic sensor drift
+            const tdsDrift = (Math.random() - 0.52) * 5; // Slight downward plant uptake bias
+            state.tds = Math.max(520, Math.min(720, state.tds + tdsDrift));
+
+            const tempDrift = (Math.random() - 0.5) * 0.2;
+            state.temp = Math.max(21.0, Math.min(29.0, state.temp + tempDrift));
+
+            const phDrift = (Math.random() - 0.5) * 0.04;
+            state.ph = Math.max(5.2, Math.min(6.8, state.ph + phDrift));
+
+            // Check Closed-Loop Dosing Condition (< 600 ppm, no lockout, float OK)
+            if (state.tds < TDS_THRESHOLD && state.lockout_sec === 0 && state.float_ok === 1 && state.pump_dose === 0) {
+                triggerDosingPulse(false);
+            }
+
+            // Push new point to Chart.js (rolling 15-point window)
+            const timeLabel = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            telemetryChart.data.labels.push(timeLabel);
+            telemetryChart.data.datasets[0].data.push(Math.round(state.tds));
+            telemetryChart.data.datasets[1].data.push(Number(state.temp.toFixed(1)));
+            telemetryChart.data.datasets[2].data.push(Number(state.ph.toFixed(2)));
+
+            if (telemetryChart.data.labels.length > 15) {
+                telemetryChart.data.labels.shift();
+                telemetryChart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            telemetryChart.update('none');
+
+            document.getElementById('lastPacketTime').textContent = timeLabel;
+            addLog(`MQTT PUB -> tds:${Math.round(state.tds)}ppm, ph:${state.ph.toFixed(2)}, temp:${state.temp.toFixed(1)}°C`, 'mqtt');
+            updateUI();
+        }, 5000);
+
+        // Initial Boot
+        addLog('ESP32-WROOM-32 Edge Node initialized. Connected to local MQTT broker.', 'info');
+        updateUI();
+    </script>
+</body>
+</html>
